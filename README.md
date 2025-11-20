@@ -55,22 +55,25 @@ FaceStats_v3.5/
 
 ## 🧭 Version 3.5 — Unified Pipeline (Architecture)
 
-````mermaid
+```mermaid
 flowchart TD
 
-    A[Raw image folder<br>data/raw/] --> B[Preprocessing<br>Resize + Align + Crop]
-    B --> C[CLIP-based Embedding Extraction<br>(512-d)]
-    C --> D[Attractiveness Model<br>Regression Score]
-    C --> E[Ethnicity Classifier<br>7-class LightGBM]
-    C --> F[Age & Gender Models<br>Hybrid CNN or InsightFace]
+    A["Raw image folder\n(data/raw/)"] 
+        --> B["Preprocessing\n(Resize / Align / Crop)"]
 
-    D --> G[Chunked Writer<br>Parquet/Arrow batching]
+    B --> C["CLIP Embedding Extraction\n(512-d)"]
+
+    C --> D["Attractiveness Model\n(Regression Score)"]
+    C --> E["Ethnicity Classifier\n(7-class LightGBM)"]
+    C --> F["Age & Gender Models\n(CNN or InsightFace)"]
+
+    D --> G["Chunked Writer\n(Parquet / Arrow batching)"]
     E --> G
     F --> G
 
-    G --> H[Master Metadata Builder<br>data/processed/]
-    H --> I[Composite Generator<br>Mean face / PCA]
-    H --> J[Visual Dashboards<br>Streamlit, matplotlib]
+    G --> H["Master Metadata Builder\n(data/processed/)"]
+    H --> I["Composite Generator\n(Mean face / PCA)"]
+    H --> J["Visualization Dashboards\n(Streamlit / Matplotlib)"]
 
     subgraph Models
         D
@@ -84,3 +87,5 @@ flowchart TD
         I
         J
     end
+```
+
