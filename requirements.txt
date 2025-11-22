@@ -1,22 +1,32 @@
-numpy
-pandas
-scikit-learn
-lightgbm
-matplotlib
-seaborn
-tqdm
-pyarrow
-fastparquet
-opencv-python
-Pillow
-torch
-torchvision
-torchaudio
-onnxruntime
-onnx
-insightface
-scipy
-faiss-cpu
-streamlit
-python-dotenv
-jupyter
+# ============================
+# FaceStats v4.0 Requirements
+# ============================
+
+# Core numerical + data
+numpy==1.26.4
+pandas==2.2.2
+polars==0.20.16
+
+# Deep Learning
+torch==2.2.2
+torchvision==0.17.2
+
+# HuggingFace
+transformers==4.44.2
+huggingface-hub==0.23.0
+sentencepiece==0.1.99    # required by some HF models
+protobuf==4.25.3         # stable, non-ONNX version
+
+# Image handling
+Pillow==10.4.0
+
+# Visualization
+matplotlib==3.8.4
+seaborn==0.13.2
+
+# Streamlit dashboard
+streamlit==1.36.0
+
+# Utilities
+tqdm==4.66.4
+pyyaml==6.0.1
