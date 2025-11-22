@@ -1,72 +1,74 @@
-# src/pipeline/preprocess.py
 """
 preprocess.py
--------------
-
-Handles face detection, alignment, and standardized preprocessing.
+----------------
+Image preprocessing pipeline for FaceStats v4.0.
 
 Responsibilities:
-- Load ONNXRuntime session for InsightFace RetinaFace detector
-- Detect faces and return bounding boxes + landmarks
-- Perform 5-point or 68-point alignment
-- Crop, resize (512×512), and normalize image data
-- Save aligned images into `data/interim/` for embedding extraction
-
-Inputs:
-- Raw image files in `data/raw/`
-
-Outputs:
-- Aligned images saved to `data/interim/`
-- Metadata (optional) saved as Parquet/CSV
+- Load raw images from data/raw/
+- Convert to RGB
+- Resize to 512×512 (PIL only)
+- Save clean processed images to data/processed/preproc/
 
 Tools:
-- onnxruntime
-- numpy
-- Pillow
-- insightface (RetinaFace)
-- cv2 (OpenCV)
-
-TODO:
-- Implement detection + alignment
-- Handle multiple faces per frame (keep largest)
-- Add exception handling + logging
+- PIL
+- pathlib
 """
 
-import os
 from pathlib import Path
-import cv2
-import numpy as np
-import onnxruntime as ort
+from PIL import Image
 
-from src.utils.file_io import list_images
-from src.utils.image_ops import save_image
-
-
-class FacePreprocessor:
-    def __init__(self, model_path: str, output_dir: str, size: int = 512):
-        self.size = size
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-
-        self.session = ort.InferenceSession(model_path)
-
-    def detect_and_align(self, img: np.ndarray) -> np.ndarray | None:
-        """Run ONNX RetinaFace → return aligned image or None."""
-        # TODO: implement ONNX RetinaFace detection + alignment
-        return None
-
-    def process_folder(self, folder: str):
-        """Iterate through raw images and produce aligned crops."""
-        for img_path in list_images(folder):
-            img = cv2.imread(str(img_path))
-            aligned = self.detect_and_align(img)
-
-            if aligned is not None:
-                out_path = self.output_dir / img_path.name
-                save_image(out_path, aligned)
+RAW_DIR = Path("data/raw")
+OUT_DIR = Path("data/processed/preproc")
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def run_preprocessing():
-    """Convenience function for orchestrator."""
-    # TODO: load config + run pipeline
-    pass
+def preprocess_image(path: Path, outpath: Path) -> None:
+    """Load, clean, resize, and save a single image."""
+    try:
+        img = Image.open(path).convert("RGB")
+        img = img.resize((512, 512), Image.BICUBIC)
+        img.save(outpath, "JPEG", quality=95)
+    except Exception as e:
+        print(f"[WARN] Failed: {path} — {e}")
+
+
+import os
+from tqdm import tqdm
+
+def run_preprocessing(input_dir: str, output_dir: str, size: int = 512):
+    """
+    Preprocess images: load, resize, save.
+
+    Args:
+        input_dir (str): Folder containing raw JPEGs.
+        output_dir (str): Folder where resized images go.
+        size (int): Resize dimension (square).
+    """
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    images = [f for f in os.listdir(input_dir) if f.lower().endswith(".jpg")]
+    if not images:
+        print(f"No images found in {input_dir}")
+        return
+
+    count = 0
+
+    for fname in tqdm(images, desc="Preprocessing"):
+        input_path = os.path.join(input_dir, fname)
+        output_path = os.path.join(output_dir, fname)
+
+        try:
+            img = Image.open(input_path).convert("RGB")
+            img = img.resize((size, size))
+            img.save(output_path, "JPEG")
+            count += 1
+        except Exception as e:
+            print(f"❌ Failed on {fname}: {e}")
+
+    print(f"Completed preprocessing: {count} images.")
+
+
+
+if __name__ == "__main__":
+    run_preprocessing()
