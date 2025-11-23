@@ -1,0 +1,2 @@
+# Ignore large local files
+data/raw/keep_local_125000_files/
