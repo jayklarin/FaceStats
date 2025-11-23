@@ -31,6 +31,8 @@ FaceStats/
 │   ├── models/
 │   └── attributes/ (legacy)
 ├── models/
+│   ├── attractiveness_regressor.pt
+│   └── gender_clf.pkl
 ├── models_insightface/
 ├── notebooks/
 │   ├── 01_preprocess.ipynb
