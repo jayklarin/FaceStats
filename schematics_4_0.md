@@ -32,7 +32,7 @@ flowchart TB
     N04["<b>Notebook</b><br>—<br>04_attractiveness_model.ipynb"]
     N04 --> M1["<b>Python</b><br>—<br>train_attractiveness.py"]
     M1 --> T4["<b>Tools</b><br>—<br>torch<br>polars"]
-    T4 --> M1M["<div style='text-align:left'><b>Methods</b><br>—<br>run_training()<br><br>EmbeddingDataset()</div>"]
+    T4 --> M1M["<div style='text-align:left'><b>Methods</b><br>—<br>run_training()<br><br>EmbeddingDataset<br>&nbsp;&nbsp;&nbsp;&nbsp;Not a file and not a standalone<br>&nbsp;&nbsp;&nbsp;&nbsp;method; you instantiate it,<br>&nbsp;&nbsp;&nbsp;&nbsp;then pass to DataLoader</div>"]
 
     %% 05_attractiveness_inference
     N05a["<b>Notebook</b><br>—<br>05_attractiveness_inference.ipynb"]
@@ -60,6 +60,7 @@ flowchart TB
     class T1,T2,T3,T4,T5,T6,T78 tools;
     class D1 files;
 ```
+
 
 ## High-Level Pipeline
 ```mermaid
