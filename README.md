@@ -1,99 +1,159 @@
-# 🧬 FaceStats v4.0 — Modern, Modular Face Analytics (PyTorch + HF)
+# 🧬 FaceStats v4.0 — CLIP-First Face Analytics
 
-FaceStats v4.0 is a cleaner, notebook-friendly refresh focused on **PyTorch + Hugging Face** components, fast parquet-first data plumbing, and lightweight composites/visuals.
+FaceStats is a CLIP-embedding-based pipeline for face metadata, scoring, and composites. It leans on PyTorch + 🤗 Transformers for embeddings, sklearn classifiers for attributes, polars (notebooks) for joins, and lightweight numpy/Pillow for composites.
 
-- 🧹 Preprocessing with Pillow/OpenCV + optional Mediapipe alignment
-- 🧠 CLIP/ViT embedding extraction (pure PyTorch/HF; no ONNX)
-- 👥 Attribute inference (age/gender/ethnicity via HF pipelines)
-- 💚 Attractiveness regression (small MLP on embeddings)
-- 📊 Master metadata builder (Polars) + composites (mean/PCA)
-- 🎨 Visualization notebooks for clustering and reporting
-- 🧩 Modular scripts + notebooks; swap models easily
+- 🧠 CLIP embeddings → parquet
+- 👥 Attribute inference (gender/ethnicity classifiers on embeddings)
+- 💚 Attractiveness regression (MLP)
+- 🎨 Composites and visualization notebooks
+- 📊 Parquet-first data plumbing with polars/pandas
 
 ---
 
-## 📦 Repository Structure (v4.0)
+## 📂 Repository Layout (current)
 
 ```
 FaceStats/
-├── config/                     # Configs/placeholders
-├── data/                       # Raw/preprocessed/processed assets
-│   ├── raw/                    # Input images
-│   ├── preprocessed/           # Resized/aligned images
-│   ├── processed/              # Parquet outputs (embeddings, attributes, master)
-│   └── attributes|embeddings…  # Generated tables (varies by run)
-├── models_insightface/         # Optional InsightFace assets
-├── notebooks/                  # Stepwise pipelines (01–05)
+├── config/
+├── data/
+│   ├── raw/
+│   │   └── fairface/
+│   ├── processed/
+│   │   ├── preproc/                     # resized/aligned JPGs
+│   │   ├── embeddings/
+│   │   │   └── embeddings_clip.parquet
+│   │   ├── metadata/
+│   │   │   ├── attributes.parquet, attributes_clean.parquet, attributes_final.parquet
+│   │   │   ├── attributes_flags.parquet, attributes_with_clusters.parquet
+│   │   │   ├── attributes_with_meta.parquet, attributes_with_manual.parquet, attributes_with_predictions.parquet
+│   │   │   ├── attractiveness_scores.parquet, attractiveness_with_attributes.parquet
+│   │   │   ├── fairface_label_structure.parquet, feature_index.json
+│   │   │   └── labels_template.csv, manual_labels.csv
+│   │   ├── composites/                  # e.g., composite_v4_example.jpg
+│   │   └── attractiveness_scores.npy
+│   ├── interim/
+│   │   ├── checkpoints/
+│   │   └── preprocessed/
+│   ├── embeddings/
+│   ├── models/
+│   └── attributes/ (legacy)
+├── models/                              # attractiveness_regressor.pt, gender_clf.pkl
+├── models_insightface/
+├── notebooks/
 │   ├── 01_preprocess.ipynb
 │   ├── 02_embeddings.ipynb
 │   ├── 03_attributes.ipynb
-│   ├── 03_labels.ipynb
 │   ├── 04_visualize_attributes.ipynb
-│   └── 05_ethnicity_clusters.ipynb
-├── src/                        # Library code
-│   ├── attributes/             # Age/gender/ethnicity helpers
-│   ├── composite/              # Composite generation
-│   ├── data_utils/             # IO, filters, constants
-│   ├── embeddings/             # CLIP/ViT embedding scripts
-│   ├── metadata/               # Master table builder
-│   ├── models/                 # Attractiveness model + training
-│   ├── pipeline/               # Preprocess orchestration
-│   └── visualization/          # Dashboards/apps (WIP)
+│   ├── 04_attractiveness_model.ipynb
+│   ├── 05_attractiveness_inference.ipynb
+│   ├── 05_ethnicity_clusters.ipynb
+│   ├── 05_composites.ipynb
+│   ├── 06_composites.ipynb
+│   └── data/
+├── src/
+│   ├── pipeline/
+│   ├── embeddings/
+│   ├── attributes/
+│   ├── models/
+│   ├── composite/
+│   ├── data_utils/
+│   ├── learning/
+│   ├── metadata/
+│   └── visualization/
+├── schematics.ipynb
+├── schematics_4_0.ipynb
+├── tools_summary.md
+├── repo_map.md
 ├── requirements.txt
-├── schematics.ipynb            # Diagrams + repo map
-└── tools_summary.md            # Tooling snapshot with mermaid map
+├── del.ipynb
+└── x.ipynb
 ```
 
 ---
 
-## 🧭 v4.0 Pipeline (Architecture)
+## 🧭 Pipeline Overview
 
 ```mermaid
 flowchart LR
-    A["📂 Raw Images<br>data/raw/"] --> B["🧹 Preprocess & Align<br>Pillow/OpenCV -> data/preprocessed/"]
-    B --> C["🧠 Embedding Extraction<br>CLIP/ViT (torch+HF) -> embeddings.parquet"]
-    C --> D["👥 Attribute Models<br>HF pipelines -> attributes.parquet"]
-    C --> E["💚 Attractiveness Model<br>MLP regressor -> scores.parquet"]
-    D --> F["📊 Metadata Builder<br>Polars merge -> master.parquet"]
-    E --> F
-    F --> G["🎨 Composites & Analysis<br>PCA/means, clustering, viz"]
+    A["📁 Raw<br>data/raw/"] --> B["🧹 Preprocess<br>src/pipeline/preprocess.py → data/processed/preproc/"]
+    B --> C["🧠 CLIP Embeddings<br>notebooks/02_embeddings.ipynb → data/processed/embeddings/embeddings_clip.parquet"]
+    C --> D["👥 Attributes (sklearn)<br>notebooks/03_attributes.ipynb → data/processed/metadata/attributes.parquet"]
+    C --> E["💚 Attractiveness (MLP)<br>notebooks/04_attractiveness_model.ipynb → models/attractiveness_regressor.pt"]
+    C --> F["🏃 Attractiveness Inference<br>notebooks/05_attractiveness_inference.ipynb → data/processed/metadata/attractiveness_scores.parquet"]
+    D --> G["📊 Enriched Metadata<br>clean/flags/meta/clusters/manual/predictions"]
+    F --> G
+    G --> H["🎨 Composites & Viz<br>notebooks/05_composites.ipynb, 04_visualize_attributes.ipynb"]
+```
+
+---
+
+## 🧠 Embeddings & Attributes
+
+```mermaid
+flowchart LR
+    A["🖼️ Preprocessed JPGs<br>data/processed/preproc/"] --> B["🤗 CLIPProcessor + CLIPModel<br>src/embeddings/embed_clip.py"]
+    B --> C["📄 embeddings_clip.parquet<br>data/processed/embeddings/"]
+    C --> D["🎯 sklearn classifiers<br>src/attributes/face_attributes.py"]
+    D --> E["📄 attributes.parquet"]
+    E --> F["✅ attributes_clean.parquet / 🚩 flags / 🌍 clusters / 🔗 meta/manual/predictions"]
+```
+
+---
+
+## 💚 Attractiveness Scoring
+
+```mermaid
+flowchart LR
+    A["🔢 embeddings_clip.parquet"] --> B["🧠 MLP train<br>notebooks/04_attractiveness_model.ipynb"]
+    B --> C["💾 models/attractiveness_regressor.pt"]
+    A --> D["🏃 Inference<br>notebooks/05_attractiveness_inference.ipynb"]
+    C --> D
+    D --> E["📄 data/processed/metadata/attractiveness_scores.parquet"]
+    E --> F["🔗 attractiveness_with_attributes.parquet"]
+```
+
+---
+
+## 🎨 Composites
+
+```mermaid
+flowchart LR
+    A["📊 Filtered metadata<br>polars/pandas"] --> B["🗂️ Filenames"]
+    B --> C["🖼️ Load images<br>data/processed/preproc/"]
+    C --> D["➕ Stack & mean<br>numpy"]
+    D --> E["🖼️ Composite image<br>save → data/processed/composites/"]
+    B -.-> F["Code: src/composite/composite_generator.py<br>filter_images, make_composite"]
 ```
 
 ---
 
 ## 🚀 Quickstart
 
-1) Install deps: `pip install -r requirements.txt` (add `torch` CUDA build if you have GPU).  
-2) Place raw images in `data/raw/`.  
+1) Install: `pip install -r requirements.txt` (pick the right `torch` build for your hardware).  
+2) Drop raw images into `data/raw/`.  
 3) Run notebooks in order:  
-   - `01_preprocess.ipynb` → resized/aligned images in `data/preprocessed/`  
-   - `02_embeddings.ipynb` → `embeddings.parquet`  
-   - `03_attributes.ipynb` → `attributes.parquet` + optional labels  
-   - `04_visualize_attributes.ipynb` / `05_ethnicity_clusters.ipynb` → analysis/plots  
-4) Train/score attractiveness (optional): `src/models/train_attractiveness.py` then merge scores.  
-5) Build master metadata: `src/metadata/build_master.py` (or notebook block).  
-6) Generate composites: `src/composite/composite_generator.py` or run the notebook block.
+   - `01_preprocess.ipynb` → `data/processed/preproc/`  
+   - `02_embeddings.ipynb` → `data/processed/embeddings/embeddings_clip.parquet`  
+   - `03_attributes.ipynb` → `data/processed/metadata/attributes.parquet` (+ clean/flags/etc.)  
+   - `04_attractiveness_model.ipynb` (train) → `models/attractiveness_regressor.pt`  
+   - `05_attractiveness_inference.ipynb` → `data/processed/metadata/attractiveness_scores.parquet`  
+   - `05_composites.ipynb` / `06_composites.ipynb` → composites in `data/processed/composites/`
+4) Programmatic helpers: `src/attributes/face_attributes.py` (infer), `src/composite/composite_generator.py` (filter_images, make_composite), `src/embeddings/embed_clip.py` (get_clip_embedding).
 
 ---
 
-## 🔍 Notable Changes vs v3.5
+## 🧰 Tooling
 
-- Pure PyTorch + HF flow (no ONNX); simpler dependency stack.
-- Attribute inference now leverages HF image-classification pipelines.
-- Embeddings standardized to CLIP/ViT; parquet outputs by default.
-- Metadata/composites handled via Polars and lightweight scripts/notebooks.
-- Repo layout mirrors the stepwise notebooks for clarity and rapid iteration.
-
----
-
-## 🧰 Tooling Snapshot
-
-- Core: Python 3.x, `torch`, `transformers`, `polars`, `numpy`, `sklearn`, `Pillow`, `tqdm`
-- Optional: `opencv-python`, Mediapipe FaceMesh (alignment), `matplotlib`/`seaborn`
-- Artifacts: `embeddings.parquet`, `attributes.parquet`, `scores.parquet`, `master.parquet`
+- Core: Python 3.x, `torch`, `transformers`, `numpy`, `sklearn`, `Pillow`, `tqdm`
+- Notebook data plumbing: `polars` (optional install; falls back to pandas via to_pandas)
+- Optional: `opencv-python`, Mediapipe FaceMesh, `matplotlib`/`seaborn`
+- Artifacts: parquet everywhere (`embeddings_clip.parquet`, `attributes*.parquet`, `attractiveness_scores.parquet`), composites as JPGs
 
 ---
 
-## 🗺️ Status
+## 📝 Tool changes since last written
 
-FaceStats v4.0 is the active iteration for research and experiments. Use this README as the landing page; see `tools_summary.md` and `schematics.ipynb` for diagrams and deeper maps.
+- Added `get_clip_embedding` to `src/embeddings/embed_clip.py` and updated `src/attributes/face_attributes.py` to use it (sklearn classifiers now consume CLIP embeddings).
+- Swapped attribute inference to sklearn joblib classifiers; added safe label resolution and age placeholder.
+- Exposed `filter_images` / `make_composite` in `src/composite/composite_generator.py` for notebook imports; composites save under `data/processed/composites/`.
+- Documented `polars` as optional (not required for core helpers).
