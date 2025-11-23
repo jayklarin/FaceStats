@@ -6,6 +6,8 @@
 numpy==1.26.4
 pandas==2.2.2
 polars==0.20.16
+scikit-learn==1.4.2
+joblib==1.4.2
 
 # Deep Learning
 torch==2.2.2
