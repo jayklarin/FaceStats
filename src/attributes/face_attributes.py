@@ -1,61 +1,48 @@
-"""
-Unified face attribute inference using InsightFace (age, gender, ethnicity).
-No HuggingFace dependencies.
-"""
 
+import os
+import joblib
 import numpy as np
 from PIL import Image
-from insightface.app import FaceAnalysis
 
-# ------------------------
-# Initialize InsightFace
-# ------------------------
+# ------------------------------------------------------------
+# Load trained models
+# ------------------------------------------------------------
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
+MODEL_DIR = os.path.abspath(MODEL_DIR)
 
-app = FaceAnalysis(name="buffalo_l")
-app.prepare(ctx_id=0)   # Works on CPU/MPS without modification
+GENDER_MODEL = joblib.load(os.path.join(MODEL_DIR, "gender_clf.pkl"))
+ETHNICITY_MODEL = joblib.load(os.path.join(MODEL_DIR, "ethnicity_clf.pkl"))
 
+# Mapping (must match training order)
+GENDER_CLASSES = ["female", "male"]
+ETHNICITY_CLASSES = [
+    "white",
+    "black",
+    "latino/hispanic",
+    "east_or_southeast_asian",
+    "indian",
+    "middle_eastern"
+]
 
-# ------------------------
-# Single-image inference
-# ------------------------
+# ------------------------------------------------------------
+# Extract CLIP embedding for a single image
+# (Used at inference time on new images)
+# ------------------------------------------------------------
+def get_embedding(image_path):
+    from src.embeddings.clip_embedder import get_clip_embedding
+    return get_clip_embedding(image_path)
 
-def infer_attributes(image_path: str):
-    """
-    Returns a dict with: age, gender, ethnicity
-    """
-    img = np.array(Image.open(image_path).convert("RGB"))
-    faces = app.get(img)
+# ------------------------------------------------------------
+# Main inference function used by pipelines
+# ------------------------------------------------------------
+def infer_attributes(image_path):
+    emb = get_embedding(image_path)          # shape (N,)
+    emb = np.array(emb).reshape(1, -1)
 
-    if len(faces) == 0:
-        return {
-            "age": None,
-            "gender": "unknown",
-            "ethnicity": "unknown",
-        }
-
-    face = faces[0]
-
-    # Gender
-    gender = "male" if face.sex == 1 else "female"
-
-    # Ethnicity probabilities from InsightFace
-    race_probs = face.race  # array of 7 values
-    race_labels = ["Asian", "White", "Black", "Indian", "Middle Eastern", "Latino", "Other"]
-
-    race_idx = int(np.argmax(race_probs))
-    race_conf = float(race_probs[race_idx])
-
-    # Confidence threshold
-    ETHNICITY_THRESHOLD = 0.55
-
-    if race_conf >= ETHNICITY_THRESHOLD:
-        ethnicity = race_labels[race_idx]
-    else:
-        ethnicity = "unknown"
-
+    gender_pred = GENDER_MODEL.predict(emb)[0]
+    ethnicity_pred = ETHNICITY_MODEL.predict(emb)[0]
 
     return {
-        "age": float(face.age),
-        "gender": gender,
-        "ethnicity": ethnicity,
+        "gender": GENDER_CLASSES[gender_pred],
+        "ethnicity": ETHNICITY_CLASSES[ethnicity_pred],
     }

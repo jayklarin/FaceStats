@@ -26,6 +26,10 @@ IMG_DIR = Path("data/processed/preproc")
 EMB_DIR = Path("data/embeddings")
 EMB_DIR.mkdir(parents=True, exist_ok=True)
 
+# Lazily initialized globals for single-image inference
+_MODEL = None
+_PROCESSOR = None
+
 
 def load_model():
     """Load CLIP model + processor."""
@@ -87,6 +91,28 @@ def extract_clip_embeddings(input_dir, output_path, model_name="openai/clip-vit-
 
     print(f"Saved {len(paths)} embeddings → {output_path}")
     return df
+
+
+def get_clip_embedding(image_path, model_name="openai/clip-vit-base-patch32"):
+    """
+    Return a single L2-normalized CLIP embedding for an image path.
+    Lazily loads the model/processor once for repeated calls.
+    """
+    import numpy as np
+    global _MODEL, _PROCESSOR
+
+    if _MODEL is None or _PROCESSOR is None:
+        _MODEL = CLIPModel.from_pretrained(model_name)
+        _PROCESSOR = CLIPProcessor.from_pretrained(model_name)
+        _MODEL.eval()
+
+    img = Image.open(image_path).convert("RGB")
+    inputs = _PROCESSOR(images=img, return_tensors="pt")
+    with torch.no_grad():
+        features = _MODEL.get_image_features(**inputs)
+
+    vec = features[0].cpu().numpy()
+    return vec / (np.linalg.norm(vec) + 1e-8)
 
 if __name__ == "__main__":
     run_embedding()

@@ -42,7 +42,6 @@ Quick reference for what each folder/file is for, rooted at `FaceStats/`.
 - `04_attractiveness_model.ipynb` — Train attractiveness regressor (synthetic labels placeholder).
 - `05_attractiveness_inference.ipynb` — Run regressor on embeddings; save scores.
 - `05_ethnicity_clusters.ipynb` — Cluster embeddings/attributes.
-- `05_ethnicity_clusters copy.ipynb` — Copy of clustering notebook.
 - `01_preprocess...05* data/` — Notebook-specific data subfolder (if any).
 - TODOs: `fs07_age_gender_ethnicity_inference.ipynb`, `fs08_fairface_alignment.ipynb`.
 
