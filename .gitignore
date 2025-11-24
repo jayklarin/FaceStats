@@ -1,2 +1,10 @@
-# Ignore large local files
+# Ignore large local files and derived data
+data/processed/preproc/
+data/processed/preproc_backup_31396/
+data/processed/preproc_best10k/
 data/raw/keep_local_125000_files/
+data/raw/for_review/
+data/interim/
+data/processed/embeddings/
+*.npy
+*.parquet
