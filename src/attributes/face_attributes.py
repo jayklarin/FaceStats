@@ -29,7 +29,7 @@ ETHNICITY_CLASSES = [
 # (Used at inference time on new images)
 # ------------------------------------------------------------
 def get_embedding(image_path):
-    from src.embeddings.clip_embedder import get_clip_embedding
+    from src.embeddings.embed_clip import get_clip_embedding
     return get_clip_embedding(image_path)
 
 # ------------------------------------------------------------
