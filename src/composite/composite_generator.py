@@ -137,6 +137,25 @@ def filter_faces(
             return tmp
 
     # ---------------------------------------
+    # FALLBACK 5 — Drop attractiveness filter entirely
+    # (use other filters that still make sense)
+    # ---------------------------------------
+    if attractiveness is not None:
+        tmp = original_df.copy()
+        if gender is not None:
+            tmp = tmp[tmp["gender_final"] == gender]
+        if ethnicity is not None:
+            tmp = tmp[tmp["ethnicity_final"] == ethnicity]
+        if age_range is not None:
+            lo, hi = age_range
+            tmp = tmp[(tmp["age"] >= lo) & (tmp["age"] <= hi)]
+
+        if len(tmp) >= min_results:
+            if verbose:
+                print(f"[fallback] Dropping attractiveness filter → {len(tmp)} results.")
+            return tmp
+
+    # ---------------------------------------
     # FINAL FALLBACK — Use everything
     # ---------------------------------------
     if verbose:
