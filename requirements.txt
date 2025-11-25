@@ -2,6 +2,7 @@
 # FaceStats v4.0 Requirements
 # ============================
 
+# Primary index, plus PyTorch CPU wheels
 --index-url https://pypi.org/simple
 --extra-index-url https://download.pytorch.org/whl/cpu
 
@@ -16,9 +17,9 @@ joblib==1.4.2
 torch==2.2.2+cpu
 torchvision==0.17.2+cpu
 
-# HuggingFace
+# HuggingFace (align hub with transformers requirement)
 transformers==4.44.2
-huggingface-hub==0.24.0
+huggingface-hub>=0.24.2,<1.0
 sentencepiece==0.1.99    # required by some HF models
 protobuf==4.25.3         # stable, non-ONNX version
 
