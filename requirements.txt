@@ -9,9 +9,10 @@ polars==0.20.16
 scikit-learn==1.4.2
 joblib==1.4.2
 
-# Deep Learning
-torch==2.2.2
-torchvision==0.17.2
+# Deep Learning (CPU wheels for Streamlit Cloud; keep extra index for torch)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
 
 # HuggingFace
 transformers==4.44.2
