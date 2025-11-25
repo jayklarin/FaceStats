@@ -2,6 +2,9 @@
 # FaceStats v4.0 Requirements
 # ============================
 
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # Core numerical + data
 numpy==1.26.4
 pandas==2.2.2
@@ -9,14 +12,13 @@ polars==0.20.16
 scikit-learn==1.4.2
 joblib==1.4.2
 
-# Deep Learning (CPU wheels for Streamlit Cloud; keep extra index for torch)
---extra-index-url https://download.pytorch.org/whl/cpu
+# Deep Learning (CPU wheels for Streamlit Cloud)
 torch==2.2.2+cpu
 torchvision==0.17.2+cpu
 
 # HuggingFace
 transformers==4.44.2
-huggingface-hub==0.23.0
+huggingface-hub==0.24.0
 sentencepiece==0.1.99    # required by some HF models
 protobuf==4.25.3         # stable, non-ONNX version
 
