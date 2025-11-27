@@ -19,6 +19,11 @@ try:
 except ImportError:
     mp = None
 
+try:
+    import cv2  # type: ignore
+except ImportError:
+    cv2 = None
+
 # Ensure project root on sys.path when launched via streamlit
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -31,6 +36,7 @@ MODEL_PATH = Path("src/models/attractiveness_regressor.pt")
 REF_SCORES = Path("data/processed/metadata/attractiveness_scores.parquet")
 TARGET_SIZE = 512
 FACE_FRACTION_MIN = 0.35
+_HAAR_CASCADE = None
 
 
 @st.cache_resource(show_spinner=False)
@@ -68,11 +74,7 @@ def score_path(path: Path, scorer: AttractivenessScorer, df_ref: pl.DataFrame, r
     return adjust_percentile(scored, df_ref, raw_col)
 
 
-def detect_face_bbox(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
-    """
-    Return pixel bbox (x0, y0, x1, y1) for the strongest detected face.
-    Uses MediaPipe if available; otherwise returns None.
-    """
+def _detect_with_mediapipe(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     if mp is None:
         return None
 
@@ -88,10 +90,7 @@ def detect_face_bbox(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     if not results.detections:
         return None
 
-    def _score(det):
-        return det.score[0] if det.score else 0.0
-
-    best = max(results.detections, key=_score)
+    best = max(results.detections, key=lambda d: d.score[0] if d.score else 0.0)
     rel = best.location_data.relative_bounding_box
     h, w = arr.shape[:2]
 
@@ -103,6 +102,56 @@ def detect_face_bbox(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     if x1 <= x0 or y1 <= y0:
         return None
     return x0, y0, x1, y1
+
+
+def _load_haar():
+    global _HAAR_CASCADE
+    if _HAAR_CASCADE or cv2 is None:
+        return _HAAR_CASCADE
+    try:
+        cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
+        if cascade_path.exists():
+            _HAAR_CASCADE = cv2.CascadeClassifier(str(cascade_path))
+    except Exception:
+        _HAAR_CASCADE = None
+    return _HAAR_CASCADE
+
+
+def _detect_with_haar(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
+    if cv2 is None:
+        return None
+    cascade = _load_haar()
+    if cascade is None:
+        return None
+
+    gray = np.asarray(image.convert("L"))
+    try:
+        faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(80, 80))
+    except Exception:
+        return None
+
+    if len(faces) == 0:
+        return None
+
+    # faces: x, y, w, h
+    x, y, w, h = sorted(faces, key=lambda f: f[2] * f[3], reverse=True)[0]
+    return int(x), int(y), int(x + w), int(y + h)
+
+
+def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, int]], str]:
+    """
+    Return pixel bbox (x0, y0, x1, y1) and detector name.
+    Tries MediaPipe first, then OpenCV Haar; falls back to None.
+    """
+    bbox = _detect_with_mediapipe(image)
+    if bbox:
+        return bbox, "mediapipe"
+
+    bbox = _detect_with_haar(image)
+    if bbox:
+        return bbox, "opencv_haar"
+
+    return None, "none"
 
 
 def square_crop_from_bbox(bbox: Tuple[int, int, int, int], img_size: Tuple[int, int], pad: float = 0.35):
@@ -139,7 +188,7 @@ def make_face_compliant(image: Image.Image):
     Returns the processed PIL image and metadata about the adjustment.
     """
     img = ImageOps.exif_transpose(image).convert("RGB")
-    bbox = detect_face_bbox(img)
+    bbox, detector = detect_face_bbox(img)
 
     face_fraction = None
     if bbox:
@@ -156,11 +205,11 @@ def make_face_compliant(image: Image.Image):
     else:
         if bbox:
             crop_box = square_crop_from_bbox(bbox, img.size, pad=0.35)
-            message = "Detected face; auto-cropped and resized to 512×512."
+            message = f"Detected face via {detector}; auto-cropped and resized to 512×512."
         else:
             crop_box = center_square_box(img.size)
-            if mp is None:
-                message = "Face detector not installed; center-cropped and resized to 512×512."
+            if detector == "none":
+                message = "No face detector available; center-cropped and resized to 512×512."
             else:
                 message = "No face detected; center-cropped and resized to 512×512."
         final_img = img.crop(crop_box).resize((TARGET_SIZE, TARGET_SIZE), Image.LANCZOS)
@@ -170,6 +219,7 @@ def make_face_compliant(image: Image.Image):
         "face_detected": bbox is not None,
         "face_fraction": face_fraction,
         "message": message,
+        "detector": detector,
     }
     return final_img, meta
 
@@ -209,8 +259,8 @@ def main():
         help="Select up to 5 images",
     )
 
-    if mp is None:
-        st.info("Optional dependency `mediapipe` not installed; images will be center-cropped when a face is not detected.")
+    if mp is None and cv2 is None:
+        st.info("No face detector available; images will be center-cropped to 512×512.")
 
     if uploaded_files:
         for uploaded in uploaded_files[:5]:
