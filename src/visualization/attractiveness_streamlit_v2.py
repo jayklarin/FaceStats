@@ -121,6 +121,19 @@ def ensure_face_detectors():
     mp_ok = _import_mediapipe()
     cv2_ok = _import_cv2()
 
+    # If mtcnn missing, attempt a lightweight runtime install (Streamlit Cloud safe)
+    if not mtcnn_ok:
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "facenet-pytorch==2.5.3"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            messages.append(f"mtcnn install failed ({e})")
+        else:
+            mtcnn_ok = _import_mtcnn()
+
     DETECTORS_READY = {"mp": mp_ok, "cv2": cv2_ok, "mtcnn": mtcnn_ok}
 
     status_parts = [
