@@ -18,7 +18,8 @@ from PIL import Image, ImageOps
 # Lazy-loaded detectors; initialized in ensure_face_detectors()
 mp = None
 cv2 = None
-DETECTORS_READY = {"mp": False, "cv2": False}
+mtcnn = None
+DETECTORS_READY = {"mp": False, "cv2": False, "mtcnn": False}
 
 # Ensure project root on sys.path when launched via streamlit
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -73,10 +74,10 @@ def score_path(path: Path, scorer: AttractivenessScorer, df_ref: pl.DataFrame, r
 
 def ensure_face_detectors():
     """
-    Try to import mediapipe and OpenCV; if missing, attempt a runtime pip install.
-    Returns (status_text, mp_ok, cv2_ok).
+    Try to import mediapipe, OpenCV, and facenet-pytorch MTCNN (CPU-only).
+    Returns (status_text, mp_ok, cv2_ok, mtcnn_ok).
     """
-    global mp, cv2, DETECTORS_READY
+    global mp, cv2, mtcnn, DETECTORS_READY
     messages = []
 
     def _import_mediapipe():
@@ -103,33 +104,33 @@ def ensure_face_detectors():
             messages.append(f"opencv missing ({e})")
             return False
 
+    def _import_mtcnn():
+        global mtcnn
+        if mtcnn is not None:
+            return True
+        try:
+            from facenet_pytorch import MTCNN  # type: ignore
+            mtcnn = MTCNN(keep_all=True, device="cpu")
+            return True
+        except Exception as e:
+            messages.append(f"mtcnn missing ({e})")
+            return False
+
     mp_ok = _import_mediapipe()
     cv2_ok = _import_cv2()
+    mtcnn_ok = _import_mtcnn()
 
-    # Attempt install if neither is available
-    if not mp_ok and not cv2_ok:
-        try:
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "mediapipe==0.10.14", "opencv-python-headless==4.10.0.84"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception as e:
-            messages.append(f"auto-install failed: {e}")
-        else:
-            mp_ok = _import_mediapipe()
-            cv2_ok = _import_cv2()
-
-    DETECTORS_READY = {"mp": mp_ok, "cv2": cv2_ok}
+    DETECTORS_READY = {"mp": mp_ok, "cv2": cv2_ok, "mtcnn": mtcnn_ok}
 
     status_parts = [
         f"mediapipe={'ok' if mp_ok else 'missing'}",
         f"opencv={'ok' if cv2_ok else 'missing'}",
+        f"mtcnn={'ok' if mtcnn_ok else 'missing'}",
     ]
     if messages:
         status_parts.append("; ".join(messages))
 
-    return "; ".join(status_parts), mp_ok, cv2_ok
+    return "; ".join(status_parts), mp_ok, cv2_ok, mtcnn_ok
 
 
 def _detect_with_mediapipe(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
@@ -196,6 +197,21 @@ def _detect_with_haar(image: Image.Image) -> Optional[Tuple[int, int, int, int]]
     return int(x), int(y), int(x + w), int(y + h)
 
 
+def _detect_with_mtcnn(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
+    if not DETECTORS_READY.get("mtcnn") or mtcnn is None:
+        return None
+    # MTCNN expects PIL Image
+    try:
+        boxes, _ = mtcnn.detect(image)
+    except Exception:
+        return None
+    if boxes is None or len(boxes) == 0:
+        return None
+    # boxes are [x1, y1, x2, y2]; pick largest area
+    x1, y1, x2, y2 = sorted(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)[0]
+    return int(x1), int(y1), int(x2), int(y2)
+
+
 def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, int]], str]:
     """
     Return pixel bbox (x0, y0, x1, y1) and detector name.
@@ -205,7 +221,7 @@ def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, 
         - "not_found" when detectors exist but found no face
         - "no_detector" when neither detector is available
     """
-    detectors_present = DETECTORS_READY.get("mp") or DETECTORS_READY.get("cv2")
+    detectors_present = DETECTORS_READY.get("mp") or DETECTORS_READY.get("cv2") or DETECTORS_READY.get("mtcnn")
     if not detectors_present:
         return None, "no_detector"
 
@@ -216,6 +232,10 @@ def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, 
     bbox = _detect_with_haar(image)
     if bbox:
         return bbox, "opencv_haar"
+
+    bbox = _detect_with_mtcnn(image)
+    if bbox:
+        return bbox, "mtcnn"
 
     return None, "not_found"
 
@@ -311,7 +331,7 @@ def main():
     st.write("Upload 1–5 portraits (JPEG/PNG) to get the model score, percentile, and 1–10 decile.")
 
     global _DETECTOR_STATUS
-    status_text, mp_ok, cv2_ok = ensure_face_detectors()
+    status_text, mp_ok, cv2_ok, mtcnn_ok = ensure_face_detectors()
     _DETECTOR_STATUS = status_text
 
     if not MODEL_PATH.exists():
@@ -331,7 +351,7 @@ def main():
         help="Select up to 5 images",
     )
 
-    if not mp_ok and not cv2_ok:
+    if not (mp_ok or cv2_ok or mtcnn_ok):
         st.info(f"No face detector available; images will be center-cropped to 512×512. Status: {_DETECTOR_STATUS}")
     else:
         st.caption(f"Face detector status: {_DETECTOR_STATUS}")

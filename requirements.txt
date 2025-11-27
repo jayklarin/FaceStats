@@ -27,6 +27,7 @@ protobuf==4.25.3         # stable, non-ONNX version
 Pillow==10.4.0
 mediapipe==0.10.14    # face detection for auto-cropping uploads
 opencv-python-headless==4.10.0.84  # lightweight face-detection fallback (haar)
+facenet-pytorch==2.5.3  # CPU MTCNN fallback; no system GL deps
 
 # Visualization
 matplotlib==3.8.4
