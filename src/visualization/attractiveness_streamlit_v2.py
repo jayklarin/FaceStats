@@ -116,9 +116,10 @@ def ensure_face_detectors():
             messages.append(f"mtcnn missing ({e})")
             return False
 
+    # Favor MTCNN across environments (no libGL dependency) for consistent crops
+    mtcnn_ok = _import_mtcnn()
     mp_ok = _import_mediapipe()
     cv2_ok = _import_cv2()
-    mtcnn_ok = _import_mtcnn()
 
     DETECTORS_READY = {"mp": mp_ok, "cv2": cv2_ok, "mtcnn": mtcnn_ok}
 
@@ -215,15 +216,19 @@ def _detect_with_mtcnn(image: Image.Image) -> Optional[Tuple[int, int, int, int]
 def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, int]], str]:
     """
     Return pixel bbox (x0, y0, x1, y1) and detector name.
-    Tries MediaPipe first, then OpenCV Haar.
+    Tries MTCNN first (consistent across envs), then MediaPipe, then OpenCV Haar.
     Detector flag values:
-        - "mediapipe" / "opencv_haar" when detected
+        - "mtcnn" / "mediapipe" / "opencv_haar" when detected
         - "not_found" when detectors exist but found no face
         - "no_detector" when neither detector is available
     """
     detectors_present = DETECTORS_READY.get("mp") or DETECTORS_READY.get("cv2") or DETECTORS_READY.get("mtcnn")
     if not detectors_present:
         return None, "no_detector"
+
+    bbox = _detect_with_mtcnn(image)
+    if bbox:
+        return bbox, "mtcnn"
 
     bbox = _detect_with_mediapipe(image)
     if bbox:
@@ -232,10 +237,6 @@ def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, 
     bbox = _detect_with_haar(image)
     if bbox:
         return bbox, "opencv_haar"
-
-    bbox = _detect_with_mtcnn(image)
-    if bbox:
-        return bbox, "mtcnn"
 
     return None, "not_found"
 
