@@ -35,6 +35,8 @@ TARGET_SIZE = 512
 FACE_FRACTION_MIN = 0.35
 _HAAR_CASCADE = None
 _DETECTOR_STATUS = ""
+REF_RAW_MIN = 0.8557892441749573  # fallback from training stats
+REF_RAW_MAX = 1.584615707397461   # fallback from training stats
 
 
 @st.cache_resource(show_spinner=False)
@@ -45,7 +47,8 @@ def load_scorer() -> AttractivenessScorer:
 @st.cache_data(show_spinner=False)
 def load_reference():
     if not REF_SCORES.exists():
-        return None, None, None
+        # Fallback to baked-in min/max if parquet not shipped
+        return None, "attractiveness_raw", (REF_RAW_MIN, REF_RAW_MAX)
     df_ref = pl.read_parquet(REF_SCORES)
     raw_col = "attractiveness_raw" if "attractiveness_raw" in df_ref.columns else "attractiveness"
     ref_min = float(df_ref[raw_col].min()) if raw_col in df_ref.columns else None
