@@ -25,6 +25,7 @@ protobuf==4.25.3         # stable, non-ONNX version
 
 # Image handling
 Pillow==10.4.0
+mediapipe==0.10.14    # face detection for auto-cropping uploads
 
 # Visualization
 matplotlib==3.8.4
