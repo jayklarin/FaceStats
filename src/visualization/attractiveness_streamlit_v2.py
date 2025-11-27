@@ -387,8 +387,6 @@ def main():
 
     if not detectors_ready:
         st.error(f"No face detector available; cannot score until a detector is installed. Status: {_DETECTOR_STATUS}")
-    else:
-        st.caption(f"Face detector status: {_DETECTOR_STATUS}")
 
     if uploaded_files and detectors_ready:
         for uploaded in uploaded_files[:5]:
