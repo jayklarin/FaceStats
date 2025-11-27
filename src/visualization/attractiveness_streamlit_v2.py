@@ -6,6 +6,7 @@ against the canonical dataset scores parquet if available.
 
 import io
 import sys
+import subprocess
 from pathlib import Path
 import tempfile
 from typing import Optional, Tuple
@@ -14,15 +15,10 @@ import polars as pl
 import streamlit as st
 from PIL import Image, ImageOps
 
-try:
-    import mediapipe as mp  # type: ignore
-except ImportError:
-    mp = None
-
-try:
-    import cv2  # type: ignore
-except ImportError:
-    cv2 = None
+# Lazy-loaded detectors; initialized in ensure_face_detectors()
+mp = None
+cv2 = None
+DETECTORS_READY = {"mp": False, "cv2": False}
 
 # Ensure project root on sys.path when launched via streamlit
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -37,6 +33,7 @@ REF_SCORES = Path("data/processed/metadata/attractiveness_scores.parquet")
 TARGET_SIZE = 512
 FACE_FRACTION_MIN = 0.35
 _HAAR_CASCADE = None
+_DETECTOR_STATUS = ""
 
 
 @st.cache_resource(show_spinner=False)
@@ -74,8 +71,69 @@ def score_path(path: Path, scorer: AttractivenessScorer, df_ref: pl.DataFrame, r
     return adjust_percentile(scored, df_ref, raw_col)
 
 
+def ensure_face_detectors():
+    """
+    Try to import mediapipe and OpenCV; if missing, attempt a runtime pip install.
+    Returns (status_text, mp_ok, cv2_ok).
+    """
+    global mp, cv2, DETECTORS_READY
+    messages = []
+
+    def _import_mediapipe():
+        global mp
+        if mp is not None:
+            return True
+        try:
+            import mediapipe as _mp  # type: ignore
+            mp = _mp
+            return True
+        except Exception as e:
+            messages.append(f"mediapipe missing ({e})")
+            return False
+
+    def _import_cv2():
+        global cv2
+        if cv2 is not None:
+            return True
+        try:
+            import cv2 as _cv2  # type: ignore
+            cv2 = _cv2
+            return True
+        except Exception as e:
+            messages.append(f"opencv missing ({e})")
+            return False
+
+    mp_ok = _import_mediapipe()
+    cv2_ok = _import_cv2()
+
+    # Attempt install if neither is available
+    if not mp_ok and not cv2_ok:
+        try:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", "--no-cache-dir", "mediapipe==0.10.14", "opencv-python-headless==4.10.0.84"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as e:
+            messages.append(f"auto-install failed: {e}")
+        else:
+            mp_ok = _import_mediapipe()
+            cv2_ok = _import_cv2()
+
+    DETECTORS_READY = {"mp": mp_ok, "cv2": cv2_ok}
+
+    status_parts = [
+        f"mediapipe={'ok' if mp_ok else 'missing'}",
+        f"opencv={'ok' if cv2_ok else 'missing'}",
+    ]
+    if messages:
+        status_parts.append("; ".join(messages))
+
+    return "; ".join(status_parts), mp_ok, cv2_ok
+
+
 def _detect_with_mediapipe(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
-    if mp is None:
+    if not DETECTORS_READY.get("mp") or mp is None:
         return None
 
     arr = np.asarray(image.convert("RGB"))
@@ -106,7 +164,7 @@ def _detect_with_mediapipe(image: Image.Image) -> Optional[Tuple[int, int, int, 
 
 def _load_haar():
     global _HAAR_CASCADE
-    if _HAAR_CASCADE or cv2 is None:
+    if _HAAR_CASCADE or not DETECTORS_READY.get("cv2") or cv2 is None:
         return _HAAR_CASCADE
     try:
         cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
@@ -118,7 +176,7 @@ def _load_haar():
 
 
 def _detect_with_haar(image: Image.Image) -> Optional[Tuple[int, int, int, int]]:
-    if cv2 is None:
+    if not DETECTORS_READY.get("cv2") or cv2 is None:
         return None
     cascade = _load_haar()
     if cascade is None:
@@ -141,8 +199,16 @@ def _detect_with_haar(image: Image.Image) -> Optional[Tuple[int, int, int, int]]
 def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, int]], str]:
     """
     Return pixel bbox (x0, y0, x1, y1) and detector name.
-    Tries MediaPipe first, then OpenCV Haar; falls back to None.
+    Tries MediaPipe first, then OpenCV Haar.
+    Detector flag values:
+        - "mediapipe" / "opencv_haar" when detected
+        - "not_found" when detectors exist but found no face
+        - "no_detector" when neither detector is available
     """
+    detectors_present = DETECTORS_READY.get("mp") or DETECTORS_READY.get("cv2")
+    if not detectors_present:
+        return None, "no_detector"
+
     bbox = _detect_with_mediapipe(image)
     if bbox:
         return bbox, "mediapipe"
@@ -151,7 +217,7 @@ def detect_face_bbox(image: Image.Image) -> Tuple[Optional[Tuple[int, int, int, 
     if bbox:
         return bbox, "opencv_haar"
 
-    return None, "none"
+    return None, "not_found"
 
 
 def square_crop_from_bbox(bbox: Tuple[int, int, int, int], img_size: Tuple[int, int], pad: float = 0.35):
@@ -208,8 +274,10 @@ def make_face_compliant(image: Image.Image):
             message = f"Detected face via {detector}; auto-cropped and resized to 512×512."
         else:
             crop_box = center_square_box(img.size)
-            if detector == "none":
+            if detector == "no_detector":
                 message = "No face detector available; center-cropped and resized to 512×512."
+            elif detector == "not_found":
+                message = "Face detector available but no face found; center-cropped and resized to 512×512."
             else:
                 message = "No face detected; center-cropped and resized to 512×512."
         final_img = img.crop(crop_box).resize((TARGET_SIZE, TARGET_SIZE), Image.LANCZOS)
@@ -242,6 +310,10 @@ def main():
     st.title("Attractiveness Scorer")
     st.write("Upload 1–5 portraits (JPEG/PNG) to get the model score, percentile, and 1–10 decile.")
 
+    global _DETECTOR_STATUS
+    status_text, mp_ok, cv2_ok = ensure_face_detectors()
+    _DETECTOR_STATUS = status_text
+
     if not MODEL_PATH.exists():
         st.error(f"Model not found at {MODEL_PATH}. Run inference/training to generate it.")
         return
@@ -259,8 +331,10 @@ def main():
         help="Select up to 5 images",
     )
 
-    if mp is None and cv2 is None:
-        st.info("No face detector available; images will be center-cropped to 512×512.")
+    if not mp_ok and not cv2_ok:
+        st.info(f"No face detector available; images will be center-cropped to 512×512. Status: {_DETECTOR_STATUS}")
+    else:
+        st.caption(f"Face detector status: {_DETECTOR_STATUS}")
 
     if uploaded_files:
         for uploaded in uploaded_files[:5]:
