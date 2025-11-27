@@ -45,31 +45,46 @@ def load_scorer() -> AttractivenessScorer:
 @st.cache_data(show_spinner=False)
 def load_reference():
     if not REF_SCORES.exists():
-        return None, None
+        return None, None, None
     df_ref = pl.read_parquet(REF_SCORES)
     raw_col = "attractiveness_raw" if "attractiveness_raw" in df_ref.columns else "attractiveness"
-    return df_ref, raw_col
+    ref_min = float(df_ref[raw_col].min()) if raw_col in df_ref.columns else None
+    ref_max = float(df_ref[raw_col].max()) if raw_col in df_ref.columns else None
+    return df_ref, raw_col, (ref_min, ref_max)
 
 
-def adjust_percentile(scored_df: pl.DataFrame, df_ref: pl.DataFrame, raw_col: str) -> pl.DataFrame:
-    if df_ref is None or raw_col is None:
+def adjust_percentile(scored_df: pl.DataFrame, df_ref: pl.DataFrame, raw_col: str, ref_range: Tuple[Optional[float], Optional[float]]) -> pl.DataFrame:
+    if raw_col is None:
         return scored_df
+
     raw_val = float(scored_df[raw_col][0]) if raw_col in scored_df.columns else float(scored_df["attractiveness"][0])
-    pct = float((df_ref[raw_col] <= raw_val).mean())
-    decile = int(np.clip(np.ceil(pct * 10), 1, 10))
-    return scored_df.with_columns([
-        pl.Series("attractiveness_pct", [pct]),
-        pl.Series("attractiveness", [decile]),
-    ])
+
+    ref_min, ref_max = ref_range if ref_range else (None, None)
+    if ref_min is not None and ref_max is not None and ref_max > ref_min:
+        norm = (raw_val - ref_min) / (ref_max - ref_min)
+        pct = float(np.clip(norm, 0.0, 1.0))
+        decile = int(np.clip(np.ceil(pct * 10), 1, 10))
+    elif df_ref is not None:
+        pct = float((df_ref[raw_col] <= raw_val).mean())
+        decile = int(np.clip(np.ceil(pct * 10), 1, 10))
+    else:
+        pct = None
+        decile = scored_df[raw_col][0] if raw_col in scored_df.columns else scored_df["attractiveness"][0]
+
+    cols = []
+    if pct is not None:
+        cols.append(pl.Series("attractiveness_pct", [pct]))
+    cols.append(pl.Series("attractiveness", [decile]))
+    return scored_df.with_columns(cols)
 
 
-def score_path(path: Path, scorer: AttractivenessScorer, df_ref: pl.DataFrame, raw_col: str) -> pl.DataFrame:
+def score_path(path: Path, scorer: AttractivenessScorer, df_ref: pl.DataFrame, raw_col: str, ref_range: Tuple[Optional[float], Optional[float]]) -> pl.DataFrame:
     emb = get_clip_embedding(path)
     emb_list = emb.tolist() if hasattr(emb, "tolist") else list(emb)
     df = pl.DataFrame({"filename": [path.name], "embedding": [emb_list]})
     df = df.with_columns(pl.col("embedding").cast(pl.List(pl.Float32)))
     scored = scorer.score_embeddings(df)
-    return adjust_percentile(scored, df_ref, raw_col)
+    return adjust_percentile(scored, df_ref, raw_col, ref_range)
 
 
 def ensure_face_detectors():
@@ -352,7 +367,7 @@ def main():
         st.error(f"Model not found at {MODEL_PATH}. Run inference/training to generate it.")
         return
 
-    df_ref, raw_col = load_reference()
+    df_ref, raw_col, ref_range = load_reference()
     if df_ref is None:
         st.warning("Reference scores parquet not found; percentile/decile will be based on the single image.")
 
@@ -365,12 +380,14 @@ def main():
         help="Select up to 5 images",
     )
 
-    if not (mp_ok or cv2_ok or mtcnn_ok):
-        st.info(f"No face detector available; images will be center-cropped to 512×512. Status: {_DETECTOR_STATUS}")
+    detectors_ready = mp_ok or cv2_ok or mtcnn_ok
+
+    if not detectors_ready:
+        st.error(f"No face detector available; cannot score until a detector is installed. Status: {_DETECTOR_STATUS}")
     else:
         st.caption(f"Face detector status: {_DETECTOR_STATUS}")
 
-    if uploaded_files:
+    if uploaded_files and detectors_ready:
         for uploaded in uploaded_files[:5]:
             try:
                 processed_img, tmp_path, meta = prepare_uploaded_image(uploaded)
@@ -379,7 +396,7 @@ def main():
                 continue
 
             try:
-                scored = score_path(tmp_path, scorer, df_ref, raw_col)
+                scored = score_path(tmp_path, scorer, df_ref, raw_col, ref_range)
                 col1, col2 = st.columns([1, 1])
                 with col1:
                     st.image(processed_img, caption=uploaded.name, width=256)
@@ -402,6 +419,8 @@ def main():
                     tmp_path.unlink(missing_ok=True)
                 except Exception:
                     pass
+    elif uploaded_files and not detectors_ready:
+        st.error("Upload skipped because no detector is available. Please install facenet-pytorch (preferred) or mediapipe/opencv and reload.")
     else:
         st.info("Upload one or more JPEG/PNG files to see scores (max 5 shown).")
 
